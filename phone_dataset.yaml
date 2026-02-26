@@ -1,0 +1,6 @@
+path: data/auc
+train: imgs/train/c2
+val: imgs/train/c2
+
+nc: 1
+names: ['phone']

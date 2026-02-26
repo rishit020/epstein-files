@@ -1,0 +1,12 @@
+# Large data and assets (excluded so push succeeds)
+data/
+models/
+runs/
+logs/
+*.zip
+*.pt
+# System and cache
+.DS_Store
+__pycache__/
+.pytest_cache/
+.claude/
