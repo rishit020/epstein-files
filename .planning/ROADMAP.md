@@ -33,7 +33,7 @@ Status: In progress
 **Plans:** 5 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Wave 0: test stub files for all Phase 6 modules
+- [x] 06-01-PLAN.md — Wave 0: test stub files for all Phase 6 modules
 - [ ] 06-02-PLAN.md — Wave 1: layer0_video/webcam_source.py (WebcamSource)
 - [ ] 06-03-PLAN.md — Wave 1: layer6_output/audio_handler.py (AudioAlertHandler)
 - [ ] 06-04-PLAN.md — Wave 1: layer6_output/event_logger.py (EventLogger, 6 log methods)
