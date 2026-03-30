@@ -30,15 +30,15 @@ Canonical refs: PRD_v2.md §FR-1.1–FR-1.6, layer1_perception/
 ### Phase 6: Video + Output + Full Wiring
 Goal: Full pipeline running live on Mac webcam.
 Status: In progress
-Deliverables:
-  - layer0_video/webcam_source.py — Mac webcam via OpenCV (PRD §FR-0.1–FR-0.4)
-  - layer6_output/audio_handler.py — afplay on Mac (PRD §FR-6.1)
-  - layer6_output/event_logger.py — rotating JSON log, 50MB max (PRD §9)
-  - main.py — wire all layers + threads (T-0, T-1, T-2, T-3 per PRD §3.3)
-  - tests/unit/test_webcam_source.py
-  - tests/unit/test_audio_handler.py
-  - tests/unit/test_event_logger.py
-  - tests/integration/test_pipeline_wiring.py
+**Plans:** 5 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Wave 0: test stub files for all Phase 6 modules
+- [ ] 06-02-PLAN.md — Wave 1: layer0_video/webcam_source.py (WebcamSource)
+- [ ] 06-03-PLAN.md — Wave 1: layer6_output/audio_handler.py (AudioAlertHandler)
+- [ ] 06-04-PLAN.md — Wave 1: layer6_output/event_logger.py (EventLogger, 6 log methods)
+- [ ] 06-05-PLAN.md — Wave 2: main.py (T-0/T-1/T-2/T-3 thread architecture) + config.py verify + integration tests
+
 Canonical refs: PRD_v2.md §FR-0.1–FR-0.4, §FR-6.1, §9, §3.3, config.py
 
 ### Phase 7: Validation (Mac)
