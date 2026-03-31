@@ -1,9 +1,7 @@
-"""test_webcam_source.py — TDD stub tests for WebcamSource.
+"""test_webcam_source.py — Unit tests for WebcamSource.
 
 PRD §FR-0.1–FR-0.4: VideoSource requirements.
 Decision D-02 (06-CONTEXT.md): WebcamSource behaviour spec.
-
-All tests skip until layer0_video.webcam_source is implemented (Plan 02).
 """
 
 from __future__ import annotations
@@ -16,19 +14,10 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock, patch, call
 
-_IMPL_MISSING = False
-try:
-    from layer0_video.webcam_source import WebcamSource, SourceUnavailableError
-    from layer0_video.messages import RawFrame
-except ImportError:
-    _IMPL_MISSING = True
+from layer0_video.webcam_source import WebcamSource, SourceUnavailableError
+from layer0_video.messages import RawFrame
 
 import config
-
-pytestmark = pytest.mark.skipif(
-    _IMPL_MISSING,
-    reason="WebcamSource not yet implemented — will be implemented in Plan 02",
-)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -43,7 +32,6 @@ class TestWebcamSource:
 
     def test_init_opens_device_index_zero(self):
         """FR-0.1: Constructor must call VideoCapture(0) for default Mac device."""
-        pytest.skip("Stub — implementation in Plan 02")
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
             mock_cap.isOpened.return_value = True
@@ -55,7 +43,6 @@ class TestWebcamSource:
 
     def test_init_sets_resolution(self):
         """FR-0.2: Constructor sets CAP_PROP_FRAME_WIDTH=1280, HEIGHT=720, FPS=30 via cap.set()."""
-        pytest.skip("Stub — implementation in Plan 02")
         import cv2
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
@@ -72,7 +59,6 @@ class TestWebcamSource:
 
     def test_init_raises_source_unavailable_on_timeout(self):
         """FR-0.3: SourceUnavailableError raised if isOpened() is always False within timeout."""
-        pytest.skip("Stub — implementation in Plan 02")
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
             mock_cap.isOpened.return_value = False
@@ -93,7 +79,6 @@ class TestWebcamSource:
 
     def test_read_returns_raw_frame(self):
         """FR-0.1: read() returns a RawFrame with correct metadata when cap.read() succeeds."""
-        pytest.skip("Stub — implementation in Plan 02")
         dummy_frame = np.zeros((config.CAPTURE_HEIGHT, config.CAPTURE_WIDTH, 3), dtype=np.uint8)
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
@@ -113,7 +98,6 @@ class TestWebcamSource:
 
     def test_read_monotonic_frame_id(self):
         """FR-0.1: Successive read() calls produce frame_id 0, 1, 2 (monotonically increasing)."""
-        pytest.skip("Stub — implementation in Plan 02")
         dummy_frame = np.zeros((config.CAPTURE_HEIGHT, config.CAPTURE_WIDTH, 3), dtype=np.uint8)
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
@@ -127,7 +111,6 @@ class TestWebcamSource:
 
     def test_read_returns_none_on_failure(self):
         """FR-0.3 / D-02: Returns None (not raises) when cap.read() returns success=False."""
-        pytest.skip("Stub — implementation in Plan 02")
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
             mock_cap.isOpened.return_value = True
@@ -140,7 +123,6 @@ class TestWebcamSource:
 
     def test_release_calls_cap_release(self):
         """FR-0.4: release() must call cap.release() to close the device."""
-        pytest.skip("Stub — implementation in Plan 02")
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
             mock_cap.isOpened.return_value = True
@@ -152,7 +134,6 @@ class TestWebcamSource:
 
     def test_read_timestamp_uses_monotonic_ns(self):
         """D-02: timestamp_ns field is a positive integer (from time.monotonic_ns)."""
-        pytest.skip("Stub — implementation in Plan 02")
         dummy_frame = np.zeros((config.CAPTURE_HEIGHT, config.CAPTURE_WIDTH, 3), dtype=np.uint8)
         with patch('cv2.VideoCapture') as mock_capture_cls:
             mock_cap = MagicMock()
