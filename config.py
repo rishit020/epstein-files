@@ -141,6 +141,10 @@ NEUTRAL_POSE_FILE                = 'calibration/session_state.json'
 CALIBRATION_REQUIRED_ON_VIN_CHANGE = True
 FORCE_RECALIBRATION              = False # Set True to bypass persisted state (PRD §23.1)
 
+# ─── AUDIO ALERT SOUNDS ──────────────────────────────────────────────────────
+AUDIO_ALERT_SOUND        = '/System/Library/Sounds/Ping.aiff'       # HIGH alerts
+AUDIO_ALERT_SOUND_URGENT = '/System/Library/Sounds/Sosumi.aiff'     # URGENT alerts
+
 # ─── LOGGING ──────────────────────────────────────────────────────────────────
 LOG_DIR          = 'logs/'
 LOG_MAX_BYTES    = 52_428_800  # 50 MB
