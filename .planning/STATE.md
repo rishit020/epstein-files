@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 1
 status: Ready to execute
-stopped_at: Completed 06-04-PLAN.md
-last_updated: "2026-03-31T15:27:04.646Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-03-31T15:27:20.651Z"
 progress:
   total_phases: 9
   completed_phases: 0
@@ -36,6 +36,7 @@ Plan: 4 of 5
 - [Phase 06]: WebcamSource timeout constants (5.0s, 0.1s) kept as local constructor constants, not added to config.py — these are implementation internals not tunable parameters
 - [Phase 06]: AlertLevel.name used for string serialisation (HIGH/URGENT) — AlertLevel.value is int violating PRD §9
 - [Phase 06]: EventLogger log_dir defaults to config.LOG_DIR; override accepted for testability
+- [Phase 06]: subprocess.Popen used for fire-and-forget audio dispatch; module-level logger patched in tests for warning assertion
 
 ## Performance Metrics
 
@@ -44,11 +45,12 @@ Plan: 4 of 5
 | 06    | 01   | 4min     | 2     | 4     |
 | Phase 06 P02 | 2min | 1 tasks | 3 files |
 | Phase 06 P04 | 8min | 1 tasks | 3 files |
+| Phase 06 P03 | 8min | 1 tasks | 4 files |
 
 ## Session Info
 
-- **Last session:** 2026-03-31T15:26:51.102Z
-- **Stopped at:** Completed 06-04-PLAN.md
+- **Last session:** 2026-03-31T15:27:20.649Z
+- **Stopped at:** Completed 06-03-PLAN.md
 
 ## Known Blockers
 
