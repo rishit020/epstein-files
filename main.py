@@ -32,6 +32,7 @@ from layer4_scoring.scoring_engine import ScoringEngine
 from layer5_alert.alert_state_machine import AlertStateMachine
 from layer6_output.audio_handler import AudioAlertHandler
 from layer6_output.event_logger import EventLogger
+from calibration.calibration_manager import CalibrationManager, CalibrationStatus
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,6 +53,72 @@ class _NoOpPhoneDetector:
     """
     def infer(self, frame: np.ndarray) -> PhoneDetectionOutput:
         return PhoneDetectionOutput(detected=False, max_confidence=0.0, bbox_norm=None)
+
+
+# ── Debug overlay ────────────────────────────────────────────────────────────
+
+def _draw_debug_overlay(frame: np.ndarray, debug: dict) -> np.ndarray:
+    """Draw live debug overlay on frame. Returns annotated copy (does not mutate)."""
+    out = frame.copy()
+    h, w = out.shape[:2]
+
+    # Semi-transparent dark panel (top-left)
+    panel = out[0:170, 0:300].copy()
+    cv2.rectangle(out, (0, 0), (300, 170), (0, 0, 0), -1)
+    cv2.addWeighted(panel, 0.25, out[0:170, 0:300], 0.75, 0, out[0:170, 0:300])
+
+    def _txt(text: str, row: int, color: tuple = (255, 255, 255)) -> None:
+        cv2.putText(out, text, (8, 20 + row * 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.56, color, 1, cv2.LINE_AA)
+
+    face_present = debug.get('face_present', False)
+    face_conf    = debug.get('face_conf', 0.0)
+    face_color   = (0, 210, 0) if face_present else (0, 60, 210)
+    _txt(f"Face : {'YES' if face_present else 'NO '} ({face_conf:.2f})", 0, face_color)
+
+    gaze_yaw   = debug.get('gaze_yaw')
+    gaze_pitch = debug.get('gaze_pitch')
+    if gaze_yaw is not None:
+        _txt(f"Gaze : Y={gaze_yaw:+.1f}  P={gaze_pitch:+.1f}", 1)
+    else:
+        _txt("Gaze : N/A", 1, (120, 120, 120))
+
+    phone = debug.get('phone_detected', False)
+    _txt(f"Phone: {'YES' if phone else 'no '}", 2, (0, 60, 210) if phone else (200, 200, 200))
+
+    score = debug.get('composite_score', 0.0)
+    state = debug.get('alert_state', 'NOMINAL')
+    score_color = (0, 210, 0) if score < 0.4 else (0, 165, 255) if score < 0.55 else (0, 60, 210)
+    _txt(f"Score: {score:.3f}", 3, score_color)
+    state_colors = {
+        'NOMINAL': (0, 210, 0), 'PRE_ALERT': (0, 165, 255),
+        'ALERTING': (0, 60, 210), 'COOLDOWN': (0, 165, 255), 'DEGRADED': (120, 120, 120),
+    }
+    _txt(f"State: {state}", 4, state_colors.get(state, (255, 255, 255)))
+    g_breach = debug.get('gaze_breach', False)
+    h_breach = debug.get('head_breach', False)
+    p_breach = debug.get('perclos_breach', False)
+    _txt(f"Flags: G={'!' if g_breach else '-'} H={'!' if h_breach else '-'} PERCLOS={'!' if p_breach else '-'}", 5,
+         (0, 60, 210) if any([g_breach, h_breach, p_breach]) else (160, 160, 160))
+
+    # Score bar at bottom
+    bar_y = h - 22
+    cv2.rectangle(out, (0, bar_y), (w, h), (30, 30, 30), -1)
+    bar_w = int(min(max(score, 0.0), 1.0) * w)
+    cv2.rectangle(out, (0, bar_y), (bar_w, h), score_color, -1)
+    thresh_x = int(config.COMPOSITE_ALERT_THRESHOLD * w)
+    cv2.line(out, (thresh_x, bar_y - 2), (thresh_x, h), (0, 220, 220), 2)
+    cv2.putText(out, f"Score {score:.3f}  |  {state}", (8, h - 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+    # Face bounding box
+    if face_present and debug.get('bbox_norm') is not None:
+        bx, by, bw_n, bh_n = debug['bbox_norm']
+        x1 = int(bx * w);  y1 = int(by * h)
+        x2 = int((bx + bw_n) * w);  y2 = int((by + bh_n) * h)
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 220, 0), 2)
+
+    return out
 
 
 # ── Queue helper ──────────────────────────────────────────────────────────────
@@ -225,8 +292,11 @@ def _t3_pipeline(
     alert_state_machine: AlertStateMachine,
     audio_handler: AudioAlertHandler,
     event_logger: EventLogger,
+    cal_manager: CalibrationManager,
     q_t3: queue.Queue,
     stop_event: threading.Event,
+    debug_state: Optional[dict] = None,
+    debug_lock: Optional[threading.Lock] = None,
 ) -> None:
     """T-3: Feed merged PerceptionBundle through the full processing chain.
 
@@ -234,10 +304,19 @@ def _t3_pipeline(
     Chain: SignalProcessor -> TemporalEngine -> ScoringEngine -> AlertStateMachine.
     Dispatches AlertCommand to AudioAlertHandler and EventLogger.
     Logs state transitions when AlertStateMachine.state changes.
+
+    Integrates CalibrationManager (PRD §23): during the first ~10s, feeds
+    head-pose frames to the calibrator and suppresses alerts. Once calibration
+    reaches a terminal state, normal alerting begins.
     """
     _log.info("T-3 started")
     prev_state: str = alert_state_machine.state
     frame_count = 0
+    calibrating = cal_manager.status in (
+        CalibrationStatus.COLLECTING, CalibrationStatus.EXTENDING,
+    )
+    if calibrating:
+        _log.info("T-3: calibration in progress — alerts suppressed until complete")
 
     while not stop_event.is_set():
         try:
@@ -253,6 +332,20 @@ def _t3_pipeline(
                 speed_stale=True,     # always stale on Mac dev
             )
 
+            # Feed CalibrationManager during calibration phase (PRD §23)
+            if calibrating:
+                hp = signal_frame.head_pose
+                ear = signal_frame.eye_signals.mean_EAR if signal_frame.eye_signals else 0.0
+                if hp is not None:
+                    cal_status = cal_manager.feed_frame(
+                        hp.yaw_deg, hp.pitch_deg, ear, hp.valid,
+                    )
+                else:
+                    cal_status = cal_manager.feed_frame(0.0, 0.0, ear, False)
+                if cal_status in (CalibrationStatus.COMPLETE, CalibrationStatus.FAILED):
+                    calibrating = False
+                    _log.info("T-3: calibration finished (%s) — alerts enabled", cal_status.name)
+
             # Step 2: TemporalEngine — compute window-aggregated features
             temporal_features = temporal_engine.process(signal_frame)
 
@@ -260,7 +353,12 @@ def _t3_pipeline(
             distraction_score = scoring_engine.score(temporal_features)
 
             # Step 4: AlertStateMachine — determine if an alert should fire
-            alert_cmd = alert_state_machine.process(distraction_score)
+            # Suppress alerts during calibration to avoid false positives from
+            # uncalibrated head pose offsets.
+            if calibrating:
+                alert_cmd = None
+            else:
+                alert_cmd = alert_state_machine.process(distraction_score)
 
             # Log state transition if state changed
             current_state = alert_state_machine.state
@@ -291,11 +389,36 @@ def _t3_pipeline(
                     bundle.frame_id,
                 )
 
+            # Update shared debug state for overlay rendering (main thread)
+            if debug_state is not None and debug_lock is not None:
+                with debug_lock:
+                    debug_state['face_present']    = bundle.face.present
+                    debug_state['face_conf']        = bundle.face.confidence
+                    debug_state['bbox_norm']        = bundle.face.bbox_norm
+                    debug_state['gaze_yaw']         = bundle.gaze.combined_yaw   if bundle.gaze else None
+                    debug_state['gaze_pitch']       = bundle.gaze.combined_pitch if bundle.gaze else None
+                    debug_state['phone_detected']   = bundle.phone.detected
+                    debug_state['composite_score']  = distraction_score.composite_score
+                    debug_state['alert_state']      = alert_state_machine.state
+                    debug_state['gaze_breach']      = distraction_score.gaze_threshold_breached
+                    debug_state['head_breach']      = distraction_score.head_threshold_breached
+                    debug_state['perclos_breach']   = distraction_score.perclos_threshold_breached
+
         except Exception as exc:
             _log.error("T-3 pipeline error frame_id=%d: %s", bundle.frame_id, exc)
 
         frame_count += 1
-        if frame_count % 300 == 0:  # log every ~10s at 30fps
+        if frame_count % 30 == 0 and debug_state is not None:  # ~1s at 30fps in debug mode
+            _log.info(
+                "frame=%d face=%s score=%.3f state=%s gaze=%.1f/%.1f",
+                frame_count,
+                debug_state.get('face_present', '?'),
+                debug_state.get('composite_score', 0.0),
+                debug_state.get('alert_state', '?'),
+                debug_state.get('gaze_yaw') or 0.0,
+                debug_state.get('gaze_pitch') or 0.0,
+            )
+        elif frame_count % 300 == 0:  # log every ~10s at 30fps
             _log.debug("T-3 processed %d frames", frame_count)
 
     _log.info("T-3 stopped after %d frames", frame_count)
@@ -309,7 +432,11 @@ def main() -> None:
                         help='Webcam device index (default: 0)')
     parser.add_argument('--display', action='store_true', default=False,
                         help='Show live preview window (cv2.imshow on main thread)')
+    parser.add_argument('--debug', action='store_true', default=False,
+                        help='Overlay detection/score debug info on the display window (implies --display)')
     args = parser.parse_args()
+    if args.debug:
+        args.display = True
 
     _log.info("Starting Attentia Drive — device=%d display=%s", args.device, args.display)
     _log.info("Config: FRAME_QUEUE_DEPTH=%d PHONE_THREAD_TIMEOUT_MS=%d",
@@ -340,6 +467,11 @@ def main() -> None:
     audio_handler = AudioAlertHandler()
     event_logger = EventLogger()
 
+    # Startup calibration (PRD §23) — load persisted state or begin collecting
+    cal_manager = CalibrationManager(signal_processor)
+    cal_status = cal_manager.startup()
+    _log.info("Calibration startup: %s", cal_status.name)
+
     _log.info("All components initialised")
 
     # ── Queues and sync primitives ────────────────────────────────────────
@@ -350,6 +482,9 @@ def main() -> None:
 
     t2_results: dict = {}
     t2_lock = threading.Lock()
+
+    debug_state: Optional[dict] = {} if args.debug else None
+    debug_lock:  Optional[threading.Lock] = threading.Lock() if args.debug else None
 
     stop_event = threading.Event()
 
@@ -368,7 +503,7 @@ def main() -> None:
     t3 = threading.Thread(
         target=_t3_pipeline,
         args=(signal_processor, temporal_engine, scoring_engine, alert_state_machine,
-              audio_handler, event_logger, q_t3, stop_event),
+              audio_handler, event_logger, cal_manager, q_t3, stop_event, debug_state, debug_lock),
         name='T-3-Pipeline', daemon=False,
     )
     t2 = threading.Thread(
@@ -404,7 +539,13 @@ def main() -> None:
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         stop_event.set()
                     continue
-                cv2.imshow('Attentia Drive', raw_frame.data)
+                if args.debug and debug_state is not None:
+                    with debug_lock:
+                        dstate = dict(debug_state)
+                    display_frame = _draw_debug_overlay(raw_frame.data, dstate)
+                else:
+                    display_frame = raw_frame.data
+                cv2.imshow('Attentia Drive', display_frame)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     stop_event.set()
             cv2.destroyAllWindows()

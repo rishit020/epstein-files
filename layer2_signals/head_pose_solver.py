@@ -15,15 +15,16 @@ import config
 # ── 3D Mean Face Model (6 reference points, millimetres) ──────────────────────
 # Points: nose tip, chin, left eye outer corner, right eye outer corner,
 #         left mouth corner, right mouth corner.
-# Coordinate system: X right, Y up, Z forward (out of face).
-# Source: OpenCV head-pose-estimation reference model (widely cited).
+# Coordinate system: OpenCV camera convention — X right, Y down, Z into scene.
+# Converted from the widely-cited Y-up/Z-out reference by negating Y and Z,
+# so PnP returns a near-identity rotation for a neutral face (no 180° roll artefact).
 _FACE_MODEL_3D = np.array([
-    [0.0,    0.0,     0.0],    # Nose tip
-    [0.0,   -63.6,  -12.5],    # Chin
-    [-43.3,  32.7,  -26.0],    # Left eye outer corner  (subject's left)
-    [43.3,   32.7,  -26.0],    # Right eye outer corner (subject's right)
-    [-28.9, -28.9,  -24.1],    # Left mouth corner
-    [28.9,  -28.9,  -24.1],    # Right mouth corner
+    [  0.0,    0.0,    0.0],   # Nose tip
+    [  0.0,   63.6,   12.5],   # Chin
+    [-43.3,  -32.7,   26.0],   # Left eye outer corner  (subject's left)
+    [ 43.3,  -32.7,   26.0],   # Right eye outer corner (subject's right)
+    [-28.9,   28.9,   24.1],   # Left mouth corner
+    [ 28.9,   28.9,   24.1],   # Right mouth corner
 ], dtype=np.float64)
 
 # ── iBUG 68-point landmark indices for the 6 PnP keypoints ───────────────────
@@ -86,24 +87,28 @@ class HeadPoseSolver:
             ], dtype=np.float64)
             dist_coeffs = np.zeros(4, dtype=np.float64)
 
-            # PnP solve — SOLVEPNP_ITERATIVE (PRD §5.1)
+            # PnP solve — SOLVEPNP_SQPNP (more robust than ITERATIVE for
+            # quasi-coplanar face landmarks; avoids flipped-solution ambiguity).
             success, rvec, tvec = cv2.solvePnP(
                 _FACE_MODEL_3D,
                 image_points,
                 camera_matrix,
                 dist_coeffs,
-                flags=cv2.SOLVEPNP_ITERATIVE,
+                flags=cv2.SOLVEPNP_SQPNP,
             )
-            if not success:
+            if not success or tvec[2, 0] < 0:
+                # Face must be in front of camera (positive Z in camera coords)
                 return 0.0, 0.0, 0.0, 999.0, False
 
             # Rotation vector → rotation matrix
             R_mat, _ = cv2.Rodrigues(rvec)
 
-            # Extract Euler angles (PRD §5.1 formulas)
-            raw_yaw_deg   = atan2(R_mat[1, 0], R_mat[0, 0]) * (180.0 / pi)
-            raw_pitch_deg = atan2(-R_mat[2, 0], sqrt(R_mat[2, 1] ** 2 + R_mat[2, 2] ** 2)) * (180.0 / pi)
-            raw_roll_deg  = atan2(R_mat[2, 1], R_mat[2, 2]) * (180.0 / pi)
+            # YXZ Euler decomposition: R = Ry(yaw) * Rx(pitch) * Rz(roll)
+            # Gives head-pose-meaningful angles directly with the OpenCV-convention
+            # 3D model (Y-down, Z-into-scene).
+            raw_yaw_deg   = atan2(R_mat[0, 2], R_mat[2, 2]) * (180.0 / pi)
+            raw_pitch_deg = atan2(-R_mat[1, 2], sqrt(R_mat[0, 2] ** 2 + R_mat[2, 2] ** 2)) * (180.0 / pi)
+            raw_roll_deg  = atan2(R_mat[1, 0], R_mat[1, 1]) * (180.0 / pi)
 
             # Reprojection error (mean pixel error over 6 keypoints)
             reprojection_error = self._reprojection_error(

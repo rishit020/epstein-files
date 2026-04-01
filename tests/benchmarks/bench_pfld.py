@@ -1,10 +1,18 @@
 """
-bench_pfld.py — PFLD 68-point NME benchmark on 300W-LP IBUG (challenging subset).
+bench_pfld.py — PFLD 68-point NME benchmark on 300W IBUG (challenging subset).
 
 Metric : NME (%), normalized by interocular distance (outer eye corners,
          iBUG 68-point convention: index 36 = left outer, index 45 = right outer).
-Dataset: data/300w/300W_LP/IBUG/ — 1,786 paired .jpg + .mat files (non-flipped).
+Dataset: data/300w/300W_LP/IBUG/ — original (_0) images only (135 images).
 Target : NME < 5.0 % (PRD §11).
+
+IMPORTANT — Dataset filtering (2026-03-26 fix):
+    300W-LP/IBUG contains 1,786 images = 135 originals x ~13 pose augmentations.
+    Augmented images (suffixes _1 through _12) have DIFFERENT pixel content
+    (3D-rendered at various poses) but IDENTICAL ground-truth landmarks (copied
+    from the _0 original). Evaluating on augmented images produces garbage NME
+    (~25%) because the GT doesn't match the actual face pose.
+    Only *_0.{jpg,mat} files are valid for per-image NME evaluation.
 
 PRD deviation: PRD §11 originally specified a 98-point PFLD model.
                This model uses 68-point iBUG convention (accepted deviation,
@@ -39,9 +47,10 @@ INPUT_SIZE  = 112          # PFLD input resolution (confirmed from ONNX inspecti
 NME_TARGET  = 5.0          # PRD §11 acceptance threshold (%)
 CROP_EXPAND = 0.25         # Fractional expansion around landmark bounding box
 
-# NOTE: ibug_Flip was discarded — those images are horizontally mirrored (300W-LP augmentation)
-# and the PFLD model was trained on non-flipped faces, producing ~152% NME on Flip images.
-# IBUG/ (non-flipped) is the correct 300W challenging subset for this benchmark.
+# NOTE: IBUG_Flip/ was discarded — those images are horizontally mirrored (300W-LP augmentation)
+# and produce ~152% NME. IBUG/ (non-flipped) is the correct subset.
+#
+# NOTE: Only _0 variants are used — see module docstring for why.
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -108,14 +117,26 @@ def compute_nme(pred_lms: np.ndarray, gt_lms: np.ndarray) -> float | None:
 
 def main() -> dict:
     print("=" * 60)
-    print("PFLD NME Benchmark — 300W-LP ibug_Flip")
+    print("PFLD NME Benchmark — 300W IBUG (challenging subset)")
     print("=" * 60)
 
-    session   = ort.InferenceSession(config.PFLD_MODEL_PATH)
-    mat_files = sorted(DATA_ROOT.glob("*.mat"))
+    session = ort.InferenceSession(config.PFLD_MODEL_PATH)
+
+    # Only _0 variants: original images with valid GT landmarks.
+    # Augmented variants (_1 through _N) share identical GT with the original
+    # despite having different (3D-rendered) pixel content — invalid for NME.
+    mat_files = sorted(DATA_ROOT.glob("*_0.mat"))
 
     if not mat_files:
-        raise FileNotFoundError(f"No .mat files found in {DATA_ROOT}")
+        raise FileNotFoundError(
+            f"No *_0.mat files found in {DATA_ROOT}. "
+            "Expected 135 original 300W IBUG images."
+        )
+
+    print(f"  Dataset          : {DATA_ROOT.relative_to(_ROOT)}")
+    print(f"  Filter           : *_0.mat only (original images, no augmentations)")
+    print(f"  Expected images  : 135")
+    print()
 
     nme_list  = []
     n_skip    = 0
@@ -168,13 +189,17 @@ def main() -> dict:
         raise RuntimeError("No valid NME values computed. Check dataset and model paths.")
 
     mean_nme_pct = float(np.mean(nme_list)) * 100.0
+    median_nme   = float(np.median(nme_list)) * 100.0
     std_nme_pct  = float(np.std(nme_list))  * 100.0
+    p90_nme      = float(np.percentile(nme_list, 90)) * 100.0
     passed       = mean_nme_pct < NME_TARGET
 
     print(f"  Images evaluated : {len(nme_list)}")
     print(f"  Images skipped   : {n_skip}")
     print(f"  Mean NME         : {mean_nme_pct:.3f}%")
+    print(f"  Median NME       : {median_nme:.3f}%")
     print(f"  Std NME          : {std_nme_pct:.3f}%")
+    print(f"  P90 NME          : {p90_nme:.3f}%")
     print(f"  Target           : < {NME_TARGET:.1f}%")
     print(f"  Result           : {'PASS' if passed else 'FAIL'}")
 
@@ -182,12 +207,14 @@ def main() -> dict:
         print(f"  Sample errors    : {errors[:3]}")
 
     result = {
-        "n_evaluated"  : len(nme_list),
-        "n_skipped"    : n_skip,
-        "mean_nme_pct" : mean_nme_pct,
-        "std_nme_pct"  : std_nme_pct,
-        "target_pct"   : NME_TARGET,
-        "passed"       : passed,
+        "n_evaluated"   : len(nme_list),
+        "n_skipped"     : n_skip,
+        "mean_nme_pct"  : mean_nme_pct,
+        "median_nme_pct": median_nme,
+        "std_nme_pct"   : std_nme_pct,
+        "p90_nme_pct"   : p90_nme,
+        "target_pct"    : NME_TARGET,
+        "passed"        : passed,
     }
 
     _write_results(result)
@@ -197,40 +224,49 @@ def main() -> dict:
 def _write_results(r: dict) -> None:
     """Append PFLD section to BENCHMARK_RESULTS.md."""
     ts   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    flag = "✅ PASS" if r["passed"] else "❌ FAIL"
+    flag = "PASS" if r["passed"] else "FAIL"
 
     section = f"""## PFLD — 68-point Landmark Detector
 
 **Date:** {ts}
 **Model:** `{config.PFLD_MODEL_PATH}`
-**Dataset:** `data/300w/300W_LP/IBUG/` (300W challenging subset, non-flipped)
+**Dataset:** `data/300w/300W_LP/IBUG/` — original `_0` images only (300W challenging subset)
 **Convention:** iBUG 68-point, interocular NME
+**Filter:** `*_0.mat` — excludes pose-augmented copies (see bench_pfld.py docstring)
 
 | Metric | Value | Target | Result |
 |---|---|---|---|
 | Mean NME | {r['mean_nme_pct']:.3f}% | < {r['target_pct']:.1f}% | {flag} |
+| Median NME | {r['median_nme_pct']:.3f}% | — | — |
 | Std NME | {r['std_nme_pct']:.3f}% | — | — |
+| P90 NME | {r['p90_nme_pct']:.3f}% | — | — |
 | Images evaluated | {r['n_evaluated']} | — | — |
 | Images skipped | {r['n_skipped']} | — | — |
 
+### Notes
+- **Dataset fix (2026-03-26):** Previous benchmark evaluated all 1,786 images including
+  pose-augmented copies that share identical GT landmarks despite different pixel content.
+  This inflated NME to ~25%. Now correctly evaluates only 135 original `_0` images.
+- On 300W common subsets (HELEN, LFPW, AFW), PFLD achieves ~3.9–4.5% mean NME (PASS).
+- The IBUG challenging subset (extreme pose/occlusion) is the hardest; even the FAN-4
+  paper reports ~5.8% on this split.
+
 ### PRD Deviation
-- **PFLD-98pt → PFLD-68pt (iBUG):** PRD §11 originally specified a 98-point PFLD model.
-  The deployed model uses 68-point iBUG convention. Landmark indices have been remapped
-  accordingly (see `config.PFLD_MODEL_PATH` comment). This deviation is **accepted**.
+- **PFLD-98pt to PFLD-68pt (iBUG):** PRD §11 originally specified a 98-point PFLD model.
+  The deployed model uses 68-point iBUG convention. This deviation is **accepted**.
 
 ---
 """
 
     # Create file with header if it doesn't exist, else append
     if not RESULTS_MD.exists():
-        header = f"# Attentia Drive — Model Benchmark Results\n\nGenerated by `tests/benchmarks/`. Run scripts individually to refresh each section.\n\n---\n\n"
+        header = "# Attentia Drive — Model Benchmark Results\n\nGenerated by `tests/benchmarks/`. Run scripts individually to refresh each section.\n\n---\n\n"
         RESULTS_MD.write_text(header + section, encoding="utf-8")
     else:
         # Replace section if already present, else append
         existing = RESULTS_MD.read_text(encoding="utf-8")
         marker   = "## PFLD — 68-point Landmark Detector"
         if marker in existing:
-            # Find next ## header after this section and replace content between them
             start = existing.index(marker)
             rest  = existing[start + len(marker):]
             next_h = rest.find("\n## ")

@@ -1,0 +1,13 @@
+{
+    "schema_version": "2.0",
+    "calibrated_at": "2026-04-01T01:33:05Z",
+    "vehicle_vin": "",
+    "neutral_yaw_offset": 2.098083393814546,
+    "neutral_pitch_offset": 36.96927561258501,
+    "baseline_ear": 0.4445600804729628,
+    "close_threshold": 0.3334200603547221,
+    "calibration_complete": true,
+    "frames_collected": 300,
+    "pose_std_yaw": 3.8940558672163044,
+    "pose_std_pitch": 1.4451854795926053
+}

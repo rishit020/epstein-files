@@ -6,6 +6,8 @@
 # Production uses .rknn format; ONNX is Mac/dev only (per CLAUDE.md)
 BLAZEFACE_MODEL_PATH = 'models/blazeface.onnx'
 # PRD specifies pfld_98pt.onnx (98-point). Using 68-point model as accepted deviation. Indices remapped to iBUG 68-point convention.
+# Corrected benchmark (2026-03-26): PFLD achieves ~4.3% NME on 300W common, ~5.97% on IBUG challenging.
+# Previous 24.74% result was caused by evaluating on augmented images with wrong GT — see PFLD_HANDOFF.md.
 PFLD_MODEL_PATH      = 'models/pfld.onnx'
 GAZE_MODEL_PATH      = 'models/gaze_mobilenetv3_lstm.onnx'
 YOLO_MODEL_PATH      = 'models/yolov8n_phone.onnx'
@@ -24,7 +26,7 @@ RKNN_TARGET_PLATFORM = 'rk3568'
 RKNN_TOOLKIT_VERSION = '2.0.0b0'  # Must match BSP. Pin this.
 
 # ─── CONFIDENCE GATES ─────────────────────────────────────────────────────────
-FACE_CONFIDENCE_GATE     = 0.60
+FACE_CONFIDENCE_GATE     = 0.35  # Lowered from 0.60 — Mac webcam BlazeFace scores real face 0.43-0.63; false positives outscore it at 0.60+ gate
 LANDMARK_CONFIDENCE_GATE = 0.65
 
 # ─── ROAD ZONE ────────────────────────────────────────────────────────────────
@@ -57,7 +59,7 @@ T_FACE_ABSENT_SECONDS = 5.0
 # ─── HEAD POSE THRESHOLDS ─────────────────────────────────────────────────────
 HEAD_YAW_THRESHOLD_DEG   = 30.0
 HEAD_PITCH_THRESHOLD_DEG = 20.0
-PNP_REPROJECTION_ERR_MAX = 8.0   # pixels
+PNP_REPROJECTION_ERR_MAX = 75.0    # pixels (Mac dev: uncalibrated webcam; production=8.0 with calibrated camera)
 
 # ─── EAR / PERCLOS ────────────────────────────────────────────────────────────
 EAR_DEFAULT_CLOSE_THRESHOLD = 0.21
@@ -118,7 +120,7 @@ DEGRADED_RECOVERY_FRAMES  = 30   # 1.0s of valid frames to recover
 DEGRADED_TRIGGER_LIGHTING = 90   # Extended trigger window during AE convergence
 
 # ─── THREAD / SYNC ────────────────────────────────────────────────────────────
-PHONE_THREAD_TIMEOUT_MS = 5   # Wait for T-2 before using stale phone result
+PHONE_THREAD_TIMEOUT_MS = 100  # Wait for T-2 before using stale phone result (YOLO ~45ms on Mac)
 FRAME_QUEUE_DEPTH       = 2   # T-0 → T-1/T-2 queue depth (drop oldest on overflow)
 
 # ─── WATCHDOG ─────────────────────────────────────────────────────────────────

@@ -211,43 +211,42 @@ class TestHeadPoseSolver:
 
 class TestEARCalculator:
     def _open_eye_landmarks(self) -> np.ndarray:
-        """Synthetic landmarks with left/right eye points set to give EAR ~0.3."""
-        lm = np.zeros((98, 2), dtype=np.float64)
-        # Left eye (PFLD 98-pt: 60-67)
-        # _LEFT_EYE_IDX = (60, 64, 61, 63, 65, 67)
-        # p1=60 outer, p2=64 inner, p3=61 up-outer, p4=63 up-inner, p5=65 lo-inner, p6=67 lo-outer
-        lm[60] = [0.30, 0.50]   # outer corner
-        lm[64] = [0.40, 0.50]   # inner corner  (||p1-p2|| = 0.10)
-        lm[61] = [0.32, 0.47]   # upper outer   (p3)
-        lm[63] = [0.38, 0.47]   # upper inner   (p4)
-        lm[65] = [0.38, 0.53]   # lower inner   (p5)
-        lm[67] = [0.32, 0.53]   # lower outer   (p6)
-        # ||p3-p6|| = ||[0.32,0.47]-[0.32,0.53]|| = 0.06
-        # ||p4-p5|| = ||[0.38,0.47]-[0.38,0.53]|| = 0.06
+        """Synthetic landmarks with left/right eye points set to give EAR ~0.60.
+
+        Uses iBUG 68-pt indices matching ear_calculator constants:
+          _LEFT_EYE_IDX  = (36, 39, 37, 38, 40, 41)  outer,inner,up-outer,up-inner,lo-inner,lo-outer
+          _RIGHT_EYE_IDX = (45, 42, 44, 43, 47, 46)  outer,inner,up-outer,up-inner,lo-inner,lo-outer
+        """
+        lm = np.zeros((68, 2), dtype=np.float64)
+        # Left eye: outer=36, inner=39, up-outer=37, up-inner=38, lo-inner=40, lo-outer=41
+        lm[36] = [0.30, 0.50]   # outer corner
+        lm[39] = [0.40, 0.50]   # inner corner  (||p1-p2|| = 0.10)
+        lm[37] = [0.32, 0.47]   # upper outer
+        lm[38] = [0.38, 0.47]   # upper inner
+        lm[40] = [0.38, 0.53]   # lower inner
+        lm[41] = [0.32, 0.53]   # lower outer
         # EAR_left = (0.06 + 0.06) / (2 * 0.10) = 0.60
 
-        # Right eye (PFLD 98-pt: 68-75)
-        # _RIGHT_EYE_IDX = (72, 68, 71, 69, 75, 73)
-        # p1=72 outer, p2=68 inner, p3=71 up-outer, p4=69 up-inner, p5=75 lo-inner, p6=73 lo-outer
-        lm[72] = [0.60, 0.50]   # outer corner
-        lm[68] = [0.70, 0.50]   # inner corner  (||p1-p2|| = 0.10)
-        lm[71] = [0.62, 0.47]   # upper outer   (p3)
-        lm[69] = [0.68, 0.47]   # upper inner   (p4)
-        lm[75] = [0.68, 0.53]   # lower inner   (p5)
-        lm[73] = [0.62, 0.53]   # lower outer   (p6)
+        # Right eye: outer=45, inner=42, up-outer=44, up-inner=43, lo-inner=47, lo-outer=46
+        lm[45] = [0.60, 0.50]   # outer corner
+        lm[42] = [0.70, 0.50]   # inner corner  (||p1-p2|| = 0.10)
+        lm[44] = [0.62, 0.47]   # upper outer
+        lm[43] = [0.68, 0.47]   # upper inner
+        lm[47] = [0.68, 0.53]   # lower inner
+        lm[46] = [0.62, 0.53]   # lower outer
         return lm
 
     def _closed_eye_landmarks(self) -> np.ndarray:
-        """Synthetic landmarks with eyes nearly closed (EAR ~0.0)."""
-        lm = np.zeros((98, 2), dtype=np.float64)
+        """Synthetic landmarks with eyes nearly closed (EAR ~0.0), iBUG 68-pt indices."""
+        lm = np.zeros((68, 2), dtype=np.float64)
         # Left eye — horizontal width 0.10, vertical near zero
-        lm[60] = [0.30, 0.50]; lm[64] = [0.40, 0.50]
-        lm[61] = [0.32, 0.50]; lm[63] = [0.38, 0.50]
-        lm[65] = [0.38, 0.50]; lm[67] = [0.32, 0.50]
+        lm[36] = [0.30, 0.50]; lm[39] = [0.40, 0.50]
+        lm[37] = [0.32, 0.50]; lm[38] = [0.38, 0.50]
+        lm[40] = [0.38, 0.50]; lm[41] = [0.32, 0.50]
         # Right eye
-        lm[72] = [0.60, 0.50]; lm[68] = [0.70, 0.50]
-        lm[71] = [0.62, 0.50]; lm[69] = [0.68, 0.50]
-        lm[75] = [0.68, 0.50]; lm[73] = [0.62, 0.50]
+        lm[45] = [0.60, 0.50]; lm[42] = [0.70, 0.50]
+        lm[44] = [0.62, 0.50]; lm[43] = [0.68, 0.50]
+        lm[47] = [0.68, 0.50]; lm[46] = [0.62, 0.50]
         return lm
 
     def test_open_eye_ear_positive(self):

@@ -32,6 +32,16 @@ _NMS_CONF_THRESHOLD = 0.001   # Low — get all anchors, filter manually by FACE
 _NMS_IOU_THRESHOLD  = 0.3
 _MAX_DETECTIONS     = 100     # High enough to capture all candidates before manual filter
 
+# Geometry filters applied after confidence gate.
+# BlazeFace on close-up Mac webcam produces false positives that:
+#   (a) extend significantly outside the image boundary (chin/partial-face regions, y2>1)
+#   (b) cover an unrealistically large fraction of the frame (whole-scene detections)
+# Real face detections at laptop webcam distance score 0.43–0.63 confidence and
+# fit within the image with area ≈ 5–15% of frame.
+_MAX_OOB_FRACTION = 0.08   # Reject if any bbox edge is > 8% outside [0, 1]
+_MAX_DET_AREA     = 0.18   # Reject if bbox area > 18% of frame
+_MIN_DET_AREA     = 0.004  # Reject if bbox area < 0.4% of frame (sub-pixel noise)
+
 
 class FaceDetector:
     """BlazeFace face detector wrapper (ONNX runtime).
@@ -137,7 +147,33 @@ class FaceDetector:
                 present=False, confidence=0.0, bbox_norm=None, face_size_px=0
             )
 
-        best_idx = int(qualifying[np.argmax(confs[qualifying])])
+        # ── Geometry filter ───────────────────────────────────────────────────
+        # Remove false positives by rejecting detections that are:
+        #   (a) significantly outside the image boundary (e.g. chin/partial-face)
+        #   (b) unrealistically large (whole-scene spurious detections)
+        #   (c) sub-pixel noise
+        edge_lo = -_MAX_OOB_FRACTION
+        edge_hi = 1.0 + _MAX_OOB_FRACTION
+        bw_all = rows[:, _DET_X2] - rows[:, _DET_X1]
+        bh_all = rows[:, _DET_Y2] - rows[:, _DET_Y1]
+        area_all = bw_all * bh_all
+
+        geo_mask = (
+            (rows[:, _DET_X1] >= edge_lo) & (rows[:, _DET_Y1] >= edge_lo)
+            & (rows[:, _DET_X2] <= edge_hi) & (rows[:, _DET_Y2] <= edge_hi)
+            & (area_all <= _MAX_DET_AREA)
+            & (area_all >= _MIN_DET_AREA)
+        )
+        geo_qualifying = qualifying[geo_mask[qualifying]]
+
+        # Fall back to original qualifying set if geometry filter removes everything
+        selection_pool = geo_qualifying if geo_qualifying.size > 0 else qualifying
+
+        # Among the surviving detections, pick the one with the LARGEST area.
+        # At close webcam distance the correct whole-face detection is larger than
+        # chin/partial-face false positives that survived confidence gating.
+        pool_areas = area_all[selection_pool]
+        best_idx = int(selection_pool[np.argmax(pool_areas)])
         det = rows[best_idx]
 
         x1, y1, x2, y2 = (
